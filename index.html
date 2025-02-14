@@ -2,206 +2,215 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Screen Capture Test Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unattended Page Capture</title>
+    <script src="html2canvas.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .box {
-            padding: 20px;
-            border-radius: 8px;
-            background: #f0f0f0;
-        }
-
-        .animated-box {
-            width: 100px;
-            height: 100px;
-            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
-            animation: rotate 4s infinite linear;
-            margin: 20px auto;
-        }
-
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .bounce {
-            width: 50px;
-            height: 50px;
-            background: #ff6b6b;
-            border-radius: 50%;
-            animation: bounce 1s infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-20px); }
-        }
-
-        .fade {
-            animation: fade 2s infinite;
-        }
-
-        @keyframes fade {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-
-        iframe {
-            border: none;
-            width: 100%;
-            height: 300px;
-            margin-bottom: 20px;
-        }
-
-        .video-container {
-            margin: 20px 0;
-        }
-
-        video {
-            width: 100%;
-            max-width: 400px;
-            margin: 10px 0;
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            z-index: 9999;
         }
     </style>
 </head>
 <body>
-    <h1>Screen Capture Test Page</h1>
-    
-    <div class="container">
-        <div class="box">
-            <h2>CSS Animations</h2>
-            <div class="animated-box"></div>
-            <div class="bounce"></div>
-        </div>
-        
-        <div class="box">
-            <h2>Sample Images</h2>
-            <img src="https://placehold.co/200x200.png" alt="Placeholder 1" class="fade">
-            <img src="https://placehold.co/300x200.png" alt="Placeholder 2">
-        </div>
-        
-        <div class="box">
-            <h2>Autoplay Videos</h2>
-            <div class="video-container">
-                <video autoplay loop muted playsinline>
-                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
-                </video>
-                <video autoplay loop muted playsinline>
-                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" type="video/mp4">
-                </video>
-            </div>
-        </div>
-    </div>
+    <iframe id="mainFrame" src="basictestpage.html" scrolling="no" style="border:0 solid black; position:absolute; left:0; top:50px; right:0; bottom:0; width:100%; height:100%;" sandbox="allow-same-origin allow-scripts allow-downloads allow-presentation allow-modals allow-forms"></iframe>
+    <div id="status"></div>
+    <script src="capture-utils.js"></script>
+    <script>
+        class DistributedCapture {
+            constructor(options = {}) {
+                this.interval = options.interval || 30000;
+                this.status = document.getElementById('status');
+                this.isProcessing = false;
+                this.readyFrames = new Set();
+            }
 
-    <h2>Nested iframes</h2>
-    <div class="container">
-        <iframe srcdoc='
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { padding: 20px; font-family: Arial; }
-                    iframe { width: 100%; height: 200px; border: none; margin: 10px 0; }
-                </style>
-            </head>
-            <body>
-                <h3>Level 1 iframe</h3>
-                <iframe srcdoc="
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <style>
-                            body { padding: 20px; background: #f5f5f5; }
-                            iframe { width: 100%; height: 100px; border: none; margin: 10px 0; }
-                        </style>
-                    </head>
-                    <body>
-                        <h4>Level 2 iframe</h4>
-                        <iframe srcdoc=\'
-                            <html>
-                            <body style=\"padding: 10px; background: #e0e0e0;\">
-                                <h5>Level 3 iframe</h5>
-                                <p>Deepest nested content</p>
-                                <img src=https://placehold.co/150x100.png alt=\"Nested image\">
-                            </body>
-                            </html>
-                        \'></iframe>
-                    </body>
-                    </html>
-                "></iframe>
-                <img src=https://placehold.co/200x100.png alt="Nested level 1 image">
-            </body>
-            </html>
-        '></iframe>
-        
-        <iframe srcdoc='
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { padding: 20px; font-family: Arial; }
-                    .animated { animation: pulse 2s infinite; }
-                    @keyframes pulse {
-                        0% { transform: scale(1); }
-                        50% { transform: scale(1.1); }
-                        100% { transform: scale(1); }
+            updateStatus(message) {
+                this.status.textContent = `${new Date().toISOString()}: ${message}`;
+                console.log(message);
+            }
+
+            async injectCaptureScript(frame) {
+                try {
+                    const doc = frame.contentDocument;
+                    if (!doc) return false;
+
+                    // Check if scripts are already injected
+                    if (doc.querySelector('script[src="capture-utils.js"]')) {
+                        return true;
                     }
-                </style>
-            </head>
-            <body>
-                <h3>Another Level 1 iframe</h3>
-                <div class="animated">
-                    <img src=https://placehold.co/200x150.png alt="Animated nested image">
-                </div>
-                <iframe srcdoc="
-                    <html>
-                    <body style=\'padding: 10px; background: #f0f0f0;\'>
-                        <h4>Nested content</h4>
-                        <img src=https://placehold.co/150x200.png alt=\'Deep nested image\'>
-                        <video autoplay loop muted playsinline width=\'150\'>
-                            <source src=https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4 type=\'video/mp4\'>
-                        </video>
-                    </body>
-                    </html>
-                "></iframe>
-            </body>
-            </html>
-        '></iframe>
-    </div>
 
-    <div class="box">
-        <h2>Large Image</h2>
-        <img src="https://placehold.co/800x400.png" alt="Large Placeholder">
-    </div>
+                    // Add html2canvas if not present
+                    if (!doc.querySelector('script[src="html2canvas.js"]')) {
+                        const html2canvasScript = document.createElement('script');
+                        html2canvasScript.src = 'html2canvas.js';
+                        doc.head.appendChild(html2canvasScript);
+                        
+                        // Wait for html2canvas to load
+                        await new Promise(resolve => {
+                            html2canvasScript.onload = resolve;
+                            html2canvasScript.onerror = resolve;
+                        });
+                    }
 
-    <div class="container">
-        <div class="box">
-            <h2>Additional Elements</h2>
-            <ul>
-                <li class="fade">Fading text element 1</li>
-                <li class="fade">Fading text element 2</li>
-                <li class="fade">Fading text element 3</li>
-            </ul>
-        </div>
-        
-        <div class="box">
-            <h2>More Animations</h2>
-            <div class="animated-box" style="background: linear-gradient(45deg, #a8e6cf, #3d84a8);"></div>
-        </div>
-    </div>
+                    // Inject utilities
+                    const utilsScript = document.createElement('script');
+                    utilsScript.src = 'capture-utils.js';
+                    doc.head.appendChild(utilsScript);
+
+                    // Wait for utils to load
+                    await new Promise(resolve => {
+                        utilsScript.onload = resolve;
+                        utilsScript.onerror = resolve;
+                    });
+
+                    // Inject capture script
+                    const captureScript = document.createElement('script');
+                    captureScript.src = 'capture-script.js';
+                    doc.head.appendChild(captureScript);
+
+                    return true;
+                } catch (e) {
+                    console.warn('Failed to inject scripts:', e);
+                    return false;
+                }
+            }
+
+            async compositeCaptureData(data) {
+                const { baseCapture, mediaCaptures, frameCaptures, position } = data;
+
+                // Create base canvas from the page capture
+                const baseImage = await new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.src = baseCapture;
+                });
+
+                const canvas = document.createElement('canvas');
+                canvas.width = position?.width || baseImage.width;
+                canvas.height = position?.height || baseImage.height;
+                const ctx = canvas.getContext('2d');
+
+                // Draw base capture
+                ctx.drawImage(baseImage, 0, 0);
+
+                // Draw media captures
+                for (const media of mediaCaptures) {
+                    if (!media.src) continue;
+                    const img = await new Promise(resolve => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.src = media.src;
+                    });
+                    ctx.drawImage(img, media.position.x, media.position.y, 
+                                media.position.width, media.position.height);
+                }
+
+                // Draw frame captures
+                for (const frame of frameCaptures) {
+                    const composited = await this.compositeCaptureData(frame);
+                    ctx.drawImage(composited, frame.position.x, frame.position.y,
+                                frame.position.width, frame.position.height);
+                }
+
+                return canvas;
+            }
+
+            async capture() {
+                if (this.isProcessing) {
+                    this.updateStatus('Capture already in progress, skipping...');
+                    return;
+                }
+
+                this.isProcessing = true;
+                this.updateStatus('Starting distributed capture...');
+
+                try {
+                    const mainFrame = document.getElementById('mainFrame');
+                    if (!mainFrame) throw new Error('Main frame not found');
+
+                    // Inject capture scripts if not already done
+                    if (!this.readyFrames.has('main-frame')) {
+                        this.updateStatus('Injecting capture scripts...');
+                        const success = await this.injectCaptureScript(mainFrame);
+                        if (!success) throw new Error('Failed to inject capture scripts');
+                    }
+
+                    // Request capture from main frame
+                    this.updateStatus('Requesting captures from all frames...');
+                    mainFrame.contentWindow.postMessage({ type: 'capture-request' }, '*');
+
+                    // Wait for all captures
+                    const captureData = await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('Capture timeout'));
+                        }, 30000);
+
+                        const handler = event => {
+                            if (event.data.type === 'capture-response' && 
+                                event.source === mainFrame.contentWindow) {
+                                clearTimeout(timeout);
+                                window.removeEventListener('message', handler);
+                                resolve(event.data);
+                            }
+                        };
+                        window.addEventListener('message', handler);
+                    });
+
+                    // Composite all captures
+                    this.updateStatus('Compositing captures...');
+                    const finalCanvas = await this.compositeCaptureData(captureData);
+
+                    // Create final image
+                    const blob = await new Promise(resolve => {
+                        finalCanvas.toBlob(resolve, 'image/png', 1.0);
+                    });
+
+                    if (!blob) throw new Error('Failed to create final image');
+
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    this.updateStatus('Capture completed successfully');
+
+                } catch (error) {
+                    const errorMessage = error.message || 'Unknown error occurred';
+                    this.updateStatus(`Error during capture: ${errorMessage}`);
+                    console.error('Capture error:', error);
+                } finally {
+                    this.isProcessing = false;
+                }
+            }
+
+            start() {
+                // Listen for frame ready messages
+                window.addEventListener('message', event => {
+                    if (event.data.type === 'frame-ready') {
+                        this.readyFrames.add(event.data.frameId);
+                    }
+                });
+
+                // Start capture loop
+                setTimeout(() => {
+                    this.capture();
+                    setInterval(() => this.capture(), this.interval);
+                }, 5000);
+            }
+        }
+
+        window.addEventListener('load', () => {
+            const capture = new DistributedCapture({
+                interval: 30000
+            });
+            capture.start();
+        });
+    </script>
 </body>
 </html>

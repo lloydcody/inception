@@ -1,0 +1,14 @@
+{
+  "name": "inception",
+  "version": "1.0.0",
+  "description": "Page capture and streaming application",
+  "scripts": {
+    "start": "npx http-server -o index.html"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
