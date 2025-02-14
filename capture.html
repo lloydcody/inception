@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unattended Page Capture</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            z-index: 9999;
+        }
+        .capture-clone {
+            position: fixed !important;
+            left: -9999px !important;
+            top: 0 !important;
+            width: auto !important;
+            height: auto !important;
+            transform: none !important;
+            pointer-events: none !important;
+        }
+    </style>
+</head>
+<body>
+    <iframe src="index.html" scrolling="no" style="border:0 solid black; position:absolute; left:0; top:50px; right:0; bottom:0; width:150%; height:150%; transform:scale(0.6); "></iframe>
+    <div id="status"></div>
+    <video autoplay loop muted playsinline width="150">
+        <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" type="video/mp4">
+    </video>
+    <script>
+        class RecursiveCapture {
+            constructor(options = {}) {
+                this.interval = options.interval || 30000;
+                this.status = document.getElementById('status');
+                this.isProcessing = false;
+            }
+
+            updateStatus(message) {
+                this.status.textContent = `${new Date().toISOString()}: ${message}`;
+            }
+
+            async prepareVideoElement(video) {
+                return new Promise((resolve) => {
+                    if (video.readyState >= 2) {
+                        resolve(true);
+                        return;
+                    }
+
+                    const loadHandler = () => {
+                        video.removeEventListener('loadeddata', loadHandler);
+                        resolve(true);
+                    };
+
+                    video.addEventListener('loadeddata', loadHandler);
+                    
+                    // Timeout after 2 seconds
+                    setTimeout(() => resolve(false), 2000);
+                });
+            }
+
+            async prepareElement(element) {
+                const clone = element.cloneNode(true);
+                clone.classList.add('capture-clone');
+                
+                if (element.tagName === 'VIDEO') {
+                    // For videos, we need to copy the current frame
+                    const canvas = document.createElement('canvas');
+                    canvas.width = element.videoWidth || element.clientWidth;
+                    canvas.height = element.videoHeight || element.clientHeight;
+                    
+                    await this.prepareVideoElement(element);
+                    
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(element, 0, 0, canvas.width, canvas.height);
+                    
+                    // Replace video with canvas in the clone
+                    clone.style.display = 'none';
+                    const imgReplacement = document.createElement('img');
+                    imgReplacement.src = canvas.toDataURL();
+                    imgReplacement.style.position = 'absolute';
+                    imgReplacement.style.top = element.offsetTop + 'px';
+                    imgReplacement.style.left = element.offsetLeft + 'px';
+                    imgReplacement.style.width = element.offsetWidth + 'px';
+                    imgReplacement.style.height = element.offsetHeight + 'px';
+                    
+                    return imgReplacement;
+                } else if (element.tagName === 'IFRAME') {
+                    try {
+                        // Try to access iframe content
+                        const iframeDoc = element.contentDocument || element.contentWindow.document;
+                        
+                        // Force iframe to be visible
+                        clone.style.opacity = '1';
+                        clone.style.visibility = 'visible';
+                        clone.style.display = 'block';
+                        clone.style.width = element.offsetWidth + 'px';
+                        clone.style.height = element.offsetHeight + 'px';
+                        
+                        // Force all iframe content to be visible
+                        const style = document.createElement('style');
+                        style.textContent = '* { visibility: visible !important; opacity: 1 !important; }';
+                        iframeDoc.head.appendChild(style);
+                    } catch (e) {
+                        console.warn('Cannot access iframe content:', e);
+                    }
+                }
+                
+                return clone;
+            }
+
+            async captureElement(element) {
+                // Create a wrapper div that will contain our element
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'fixed';
+                wrapper.style.left = '0';
+                wrapper.style.top = '0';
+                wrapper.style.width = element.offsetWidth + 'px';
+                wrapper.style.height = element.offsetHeight + 'px';
+                wrapper.style.overflow = 'hidden';
+                wrapper.style.zIndex = '-9999';
+
+                // Prepare the element (clone and modify if needed)
+                const preparedElement = await this.prepareElement(element);
+                wrapper.appendChild(preparedElement);
+                document.body.appendChild(wrapper);
+
+                try {
+                    // Capture the wrapper
+                    const canvas = await html2canvas(wrapper, {
+                        logging: false,
+                        useCORS: true,
+                        allowTaint: true,
+                        foreignObjectRendering: true,
+                        scale: window.devicePixelRatio || 1,
+                        backgroundColor: null
+                    });
+
+                    return {
+                        canvas,
+                        position: element.getBoundingClientRect()
+                    };
+                } finally {
+                    // Clean up
+                    wrapper.remove();
+                }
+            }
+
+            async capture() {
+                if (this.isProcessing) {
+                    console.log('Capture already in progress, skipping...');
+                    return;
+                }
+
+                this.isProcessing = true;
+                this.updateStatus('Starting capture...');
+
+                try {
+                    // First capture the base page
+                    const mainCanvas = await html2canvas(document.documentElement, {
+                        logging: false,
+                        useCORS: true,
+                        allowTaint: true,
+                        foreignObjectRendering: true,
+                        scale: window.devicePixelRatio || 1
+                    });
+
+                    // Find all videos and iframes
+                    const elements = [...document.querySelectorAll('video, iframe')];
+                    
+                    // Capture each element separately
+                    const captures = await Promise.all(
+                        elements.map(element => this.captureElement(element))
+                    );
+
+                    // Create final canvas
+                    const finalCanvas = document.createElement('canvas');
+                    finalCanvas.width = mainCanvas.width;
+                    finalCanvas.height = mainCanvas.height;
+                    const ctx = finalCanvas.getContext('2d');
+
+                    // Draw main content
+                    ctx.drawImage(mainCanvas, 0, 0);
+
+                    // Draw each captured element
+                    const scale = window.devicePixelRatio || 1;
+                    captures.forEach(capture => {
+                        if (capture && capture.canvas) {
+                            ctx.drawImage(
+                                capture.canvas,
+                                capture.position.left * scale,
+                                capture.position.top * scale,
+                                capture.position.width * scale,
+                                capture.position.height * scale
+                            );
+                        }
+                    });
+
+                    // Convert to PNG and open in new tab
+                    finalCanvas.toBlob((blob) => {
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }, 'image/png', 1.0);
+
+                    this.updateStatus('Capture completed successfully');
+                } catch (error) {
+                    this.updateStatus(`Error during capture: ${error.message}`);
+                    console.error('Capture error:', error);
+                } finally {
+                    this.isProcessing = false;
+                }
+            }
+
+            start() {
+                this.capture();
+                setInterval(() => this.capture(), this.interval);
+            }
+        }
+
+        // Initialize and start capture
+        const capture = new RecursiveCapture({
+            interval: 30000
+        });
+
+        // Start capturing when page loads
+        window.addEventListener('load', () => capture.start());
+    </script>
+</body>
+</html>
