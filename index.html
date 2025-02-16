@@ -3,9 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unattended Page Capture</title>
+    <title>Capture Sender</title>
     <script src="html2canvas.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
         #status {
             position: fixed;
             top: 10px;
@@ -17,19 +25,87 @@
             font-family: monospace;
             z-index: 9999;
         }
+
+        #connection-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            z-index: 9999;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #connection-info:hover {
+            background: rgba(0,0,0,0.8);
+        }
+
+        #connection-info.copied {
+            background: rgba(76, 175, 80, 0.8);
+        }
+
+        iframe {
+            border: none;
+            width: 100%;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+
+        #capture-canvas {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+        }
     </style>
 </head>
 <body>
-    <iframe id="mainFrame" src="basictestpage.html" scrolling="no" style="border:0 solid black; position:absolute; left:0; top:50px; right:0; bottom:0; width:100%; height:100%;" sandbox="allow-same-origin allow-scripts allow-downloads allow-presentation allow-modals allow-forms"></iframe>
     <div id="status"></div>
-    <script src="capture-utils.js"></script>
+    <div id="connection-info" title="Click to copy Peer ID"></div>
+    <canvas id="capture-canvas"></canvas>
+    <div class="container">
+        <div class="box">
+            <h2>CSS Animations</h2>
+            <div class="animated-box"></div>
+            <div class="bounce"></div>
+        </div>
+        
+        <div class="box">
+            <h2>Sample Images</h2>
+            <img src="https://placehold.co/200x200.png" alt="Placeholder 1" class="fade" crossorigin="anonymous">
+            <img src="https://placehold.co/300x200.png" alt="Placeholder 2" crossorigin="anonymous">
+        </div>
+        
+        <div class="box">
+            <h2>Autoplay Videos</h2>
+            <div class="video-container">
+                <video autoplay loop muted playsinline crossorigin="anonymous">
+                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+                </video>
+                <video autoplay loop muted playsinline crossorigin="anonymous">
+                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" type="video/mp4">
+                </video>
+            </div>
+        </div>
+    </div>
+    <iframe id="mainFrame" src="basictestpage.html" scrolling="no" style="border:0 solid black; position:absolute; left:0; top:50px; right:0; bottom:0; width:100%; height:100%;" sandbox="allow-same-origin allow-scripts allow-downloads allow-presentation allow-modals allow-forms"></iframe>
+
     <script>
-        class DistributedCapture {
+        class StreamCapture {
             constructor(options = {}) {
-                this.interval = options.interval || 30000;
+                this.interval = options.interval || 1000;
                 this.status = document.getElementById('status');
+                this.connectionInfo = document.getElementById('connection-info');
+                this.captureCanvas = document.getElementById('capture-canvas');
+                this.captureCtx = this.captureCanvas.getContext('2d');
                 this.isProcessing = false;
-                this.readyFrames = new Set();
+                this.peer = null;
+                this.connection = null;
+                this.setupPeer();
+                this.setupConnectionInfoClick();
             }
 
             updateStatus(message) {
@@ -37,152 +113,175 @@
                 console.log(message);
             }
 
-            async injectCaptureScript(frame) {
-                try {
-                    const doc = frame.contentDocument;
-                    if (!doc) return false;
-
-                    // Check if scripts are already injected
-                    if (doc.querySelector('script[src="capture-utils.js"]')) {
-                        return true;
-                    }
-
-                    // Add html2canvas if not present
-                    if (!doc.querySelector('script[src="html2canvas.js"]')) {
-                        const html2canvasScript = document.createElement('script');
-                        html2canvasScript.src = 'html2canvas.js';
-                        doc.head.appendChild(html2canvasScript);
-                        
-                        // Wait for html2canvas to load
-                        await new Promise(resolve => {
-                            html2canvasScript.onload = resolve;
-                            html2canvasScript.onerror = resolve;
-                        });
-                    }
-
-                    // Inject utilities
-                    const utilsScript = document.createElement('script');
-                    utilsScript.src = 'capture-utils.js';
-                    doc.head.appendChild(utilsScript);
-
-                    // Wait for utils to load
-                    await new Promise(resolve => {
-                        utilsScript.onload = resolve;
-                        utilsScript.onerror = resolve;
-                    });
-
-                    // Inject capture script
-                    const captureScript = document.createElement('script');
-                    captureScript.src = 'capture-script.js';
-                    doc.head.appendChild(captureScript);
-
-                    return true;
-                } catch (e) {
-                    console.warn('Failed to inject scripts:', e);
-                    return false;
-                }
+            updateConnectionInfo(message) {
+                this.connectionInfo.textContent = message;
             }
 
-            async compositeCaptureData(data) {
-                const { baseCapture, mediaCaptures, frameCaptures, position } = data;
+            setupConnectionInfoClick() {
+                this.connectionInfo.addEventListener('click', () => {
+                    const peerId = this.peer?.id;
+                    if (peerId) {
+                        navigator.clipboard.writeText(peerId).then(() => {
+                            this.connectionInfo.classList.add('copied');
+                            const originalText = this.connectionInfo.textContent;
+                            this.connectionInfo.textContent = 'Copied!';
+                            setTimeout(() => {
+                                this.connectionInfo.classList.remove('copied');
+                                this.connectionInfo.textContent = originalText;
+                            }, 1500);
+                        }).catch(err => {
+                            console.error('Failed to copy:', err);
+                        });
+                    }
+                });
+            }
 
-                // Create base canvas from the page capture
-                const baseImage = await new Promise(resolve => {
-                    const img = new Image();
-                    img.onload = () => resolve(img);
-                    img.src = baseCapture;
+            setupPeer() {
+                this.peer = new Peer();
+                
+                this.peer.on('open', (id) => {
+                    this.updateConnectionInfo(`Peer ID: ${id}\nClick to copy\nWaiting for connection...`);
                 });
 
-                const canvas = document.createElement('canvas');
-                canvas.width = position?.width || baseImage.width;
-                canvas.height = position?.height || baseImage.height;
-                const ctx = canvas.getContext('2d');
-
-                // Draw base capture
-                ctx.drawImage(baseImage, 0, 0);
-
-                // Draw media captures
-                for (const media of mediaCaptures) {
-                    if (!media.src) continue;
-                    const img = await new Promise(resolve => {
-                        const img = new Image();
-                        img.onload = () => resolve(img);
-                        img.src = media.src;
+                this.peer.on('connection', (conn) => {
+                    this.connection = conn;
+                    this.updateConnectionInfo(`Connected!\nPeer ID: ${this.peer.id}\nClick to copy`);
+                    
+                    conn.on('close', () => {
+                        this.updateConnectionInfo(`Peer ID: ${this.peer.id}\nClick to copy\nConnection closed. Waiting...`);
+                        this.connection = null;
                     });
-                    ctx.drawImage(img, media.position.x, media.position.y, 
-                                media.position.width, media.position.height);
+                });
+
+                this.peer.on('error', (error) => {
+                    console.error('Peer error:', error);
+                    this.updateConnectionInfo(`Error: ${error.type}\nPeer ID: ${this.peer?.id || 'N/A'}`);
+                });
+            }
+
+            async captureVideoElement(video, x, y, width, height) {
+                // Ensure video dimensions are valid
+                const videoWidth = video.videoWidth || video.clientWidth;
+                const videoHeight = video.videoHeight || video.clientHeight;
+                
+                if (videoWidth === 0 || videoHeight === 0) {
+                    console.warn('Invalid video dimensions');
+                    return;
                 }
 
-                // Draw frame captures
-                for (const frame of frameCaptures) {
-                    const composited = await this.compositeCaptureData(frame);
-                    ctx.drawImage(composited, frame.position.x, frame.position.y,
-                                frame.position.width, frame.position.height);
-                }
+                // Draw video frame to canvas
+                this.captureCtx.drawImage(video, x, y, width, height);
+            }
 
-                return canvas;
+            async waitForMediaElements(doc) {
+                const mediaElements = [
+                    ...doc.getElementsByTagName('img'),
+                    ...doc.getElementsByTagName('video')
+                ];
+                
+                const mediaPromises = mediaElements.map(element => {
+                    return new Promise((resolve) => {
+                        if (element instanceof HTMLImageElement) {
+                            if (element.complete) {
+                                resolve();
+                            } else {
+                                element.onload = () => resolve();
+                                element.onerror = () => resolve();
+                            }
+                        } else if (element instanceof HTMLVideoElement) {
+                            if (element.readyState >= 2) {
+                                resolve();
+                            } else {
+                                const loadHandler = () => {
+                                    element.removeEventListener('loadeddata', loadHandler);
+                                    resolve();
+                                };
+                                element.addEventListener('loadeddata', loadHandler);
+                                // Force load if needed
+                                if (element.paused) {
+                                    element.play().catch(() => resolve());
+                                }
+                            }
+                        }
+                    });
+                });
+
+                return Promise.race([
+                    Promise.all(mediaPromises),
+                    new Promise(resolve => setTimeout(resolve, 5000))
+                ]);
             }
 
             async capture() {
-                if (this.isProcessing) {
-                    this.updateStatus('Capture already in progress, skipping...');
+                if (this.isProcessing || !this.connection) {
                     return;
                 }
 
                 this.isProcessing = true;
-                this.updateStatus('Starting distributed capture...');
+                this.updateStatus('Preparing for capture...');
 
                 try {
                     const mainFrame = document.getElementById('mainFrame');
-                    if (!mainFrame) throw new Error('Main frame not found');
+                    const mainDoc = mainFrame.contentDocument;
+                    
+                    // Wait for media elements
+                    await this.waitForMediaElements(mainDoc);
 
-                    // Inject capture scripts if not already done
-                    if (!this.readyFrames.has('main-frame')) {
-                        this.updateStatus('Injecting capture scripts...');
-                        const success = await this.injectCaptureScript(mainFrame);
-                        if (!success) throw new Error('Failed to inject capture scripts');
+                    // Update canvas dimensions
+                    this.captureCanvas.width = mainDoc.documentElement.scrollWidth;
+                    this.captureCanvas.height = mainDoc.documentElement.scrollHeight;
+
+                    // First capture the base content
+                    const baseCapture = await html2canvas(mainDoc.documentElement, {
+                        logging: false,
+                        useCORS: true,
+                        allowTaint: true,
+                        foreignObjectRendering: true,
+                        scale: 1,
+                        width: this.captureCanvas.width,
+                        height: this.captureCanvas.height,
+                        onclone: (clonedDoc) => {
+                            // Hide videos in base capture
+                            clonedDoc.querySelectorAll('video').forEach(v => v.style.visibility = 'hidden');
+                        }
+                    });
+
+                    // Draw base capture
+                    this.captureCtx.drawImage(baseCapture, 0, 0);
+
+                    // Capture and overlay videos
+                    const videos = mainDoc.getElementsByTagName('video');
+                    for (const video of videos) {
+                        const rect = video.getBoundingClientRect();
+                        await this.captureVideoElement(
+                            video,
+                            rect.left + mainFrame.offsetLeft,
+                            rect.top + mainFrame.offsetTop,
+                            rect.width,
+                            rect.height
+                        );
                     }
 
-                    // Request capture from main frame
-                    this.updateStatus('Requesting captures from all frames...');
-                    mainFrame.contentWindow.postMessage({ type: 'capture-request' }, '*');
-
-                    // Wait for all captures
-                    const captureData = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error('Capture timeout'));
-                        }, 30000);
-
-                        const handler = event => {
-                            if (event.data.type === 'capture-response' && 
-                                event.source === mainFrame.contentWindow) {
-                                clearTimeout(timeout);
-                                window.removeEventListener('message', handler);
-                                resolve(event.data);
-                            }
-                        };
-                        window.addEventListener('message', handler);
+                    // Convert to blob and send
+                    const blob = await new Promise((resolve, reject) => {
+                        this.captureCanvas.toBlob(
+                            blob => blob ? resolve(blob) : reject(new Error('Failed to create blob')),
+                            'image/jpeg',
+                            0.8
+                        );
                     });
 
-                    // Composite all captures
-                    this.updateStatus('Compositing captures...');
-                    const finalCanvas = await this.compositeCaptureData(captureData);
-
-                    // Create final image
-                    const blob = await new Promise(resolve => {
-                        finalCanvas.toBlob(resolve, 'image/png', 1.0);
+                    const arrayBuffer = await blob.arrayBuffer();
+                    this.connection.send({
+                        type: 'frame',
+                        data: arrayBuffer,
+                        timestamp: Date.now()
                     });
 
-                    if (!blob) throw new Error('Failed to create final image');
-
-                    const url = URL.createObjectURL(blob);
-                    window.open(url, '_blank');
-                    setTimeout(() => URL.revokeObjectURL(url), 60000);
-                    this.updateStatus('Capture completed successfully');
-
+                    this.updateStatus('Frame captured and sent successfully');
                 } catch (error) {
                     const errorMessage = error.message || 'Unknown error occurred';
-                    this.updateStatus(`Error during capture: ${errorMessage}`);
+                    this.updateStatus(`Capture error: ${errorMessage}`);
                     console.error('Capture error:', error);
                 } finally {
                     this.isProcessing = false;
@@ -190,26 +289,20 @@
             }
 
             start() {
-                // Listen for frame ready messages
-                window.addEventListener('message', event => {
-                    if (event.data.type === 'frame-ready') {
-                        this.readyFrames.add(event.data.frameId);
-                    }
-                });
-
-                // Start capture loop
-                setTimeout(() => {
-                    this.capture();
-                    setInterval(() => this.capture(), this.interval);
-                }, 5000);
+                this.updateStatus('Starting capture stream...');
+                setInterval(() => this.capture(), this.interval);
             }
         }
 
+        // Wait for page load before starting
         window.addEventListener('load', () => {
-            const capture = new DistributedCapture({
-                interval: 30000
-            });
-            capture.start();
+            // Ensure all resources are loaded
+            window.setTimeout(() => {
+                const capture = new StreamCapture({
+                    interval: 1000 // Capture every second
+                });
+                capture.start();
+            }, 1000);
         });
     </script>
 </body>

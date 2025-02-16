@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture Receiver</title>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            z-index: 9999;
+        }
+
+        #connect-form {
+            margin-bottom: 20px;
+        }
+
+        #connect-form input {
+            padding: 8px;
+            font-size: 16px;
+            width: 300px;
+        }
+
+        #connect-form button {
+            padding: 8px 16px;
+            font-size: 16px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #connect-form button:hover {
+            background: #45a049;
+        }
+
+        #preview {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #333;
+            background: #000;
+        }
+
+        .stats {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">Waiting to connect...</div>
+    <div class="stats" id="stats"></div>
+
+    <div id="connect-form">
+        <input type="text" id="peer-id" placeholder="Enter sender's Peer ID">
+        <button onclick="connect()">Connect</button>
+    </div>
+
+    <img id="preview" alt="Stream preview">
+
+    <script>
+        const status = document.getElementById('status');
+        const stats = document.getElementById('stats');
+        const preview = document.getElementById('preview');
+        let peer = null;
+        let connection = null;
+        let frameCount = 0;
+        let lastFrameTime = Date.now();
+        let currentObjectUrl = null;
+
+        function updateStatus(message) {
+            status.textContent = message;
+            console.log(message);
+        }
+
+        function updateStats() {
+            const now = Date.now();
+            const fps = Math.round(1000 / (now - lastFrameTime));
+            stats.textContent = `Frames: ${frameCount}\nFPS: ${fps}`;
+            lastFrameTime = now;
+        }
+
+        function connect() {
+            const peerId = document.getElementById('peer-id').value;
+            if (!peerId) {
+                updateStatus('Please enter a Peer ID');
+                return;
+            }
+
+            if (!peer) {
+                peer = new Peer();
+                
+                peer.on('open', () => {
+                    establishConnection(peerId);
+                });
+
+                peer.on('error', (error) => {
+                    console.error('Peer error:', error);
+                    updateStatus(`Error: ${error.type}`);
+                });
+            } else {
+                establishConnection(peerId);
+            }
+        }
+
+        function establishConnection(peerId) {
+            if (connection) {
+                connection.close();
+            }
+
+            updateStatus('Connecting to sender...');
+            connection = peer.connect(peerId);
+
+            connection.on('open', () => {
+                updateStatus('Connected to sender');
+                
+                connection.on('data', async (data) => {
+                    if (data.type === 'frame') {
+                        try {
+                            // Revoke the previous object URL if it exists
+                            if (currentObjectUrl) {
+                                URL.revokeObjectURL(currentObjectUrl);
+                            }
+
+                            const blob = new Blob([data.data], { type: 'image/jpeg' });
+                            currentObjectUrl = URL.createObjectURL(blob);
+                            
+                            // Set the new image source
+                            preview.src = currentObjectUrl;
+                            
+                            frameCount++;
+                            updateStats();
+                        } catch (error) {
+                            console.error('Error processing frame:', error);
+                            updateStatus(`Frame error: ${error.message}`);
+                        }
+                    }
+                });
+            });
+
+            connection.on('close', () => {
+                updateStatus('Connection closed');
+                // Clean up the last object URL when connection closes
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+            });
+
+            connection.on('error', (error) => {
+                console.error('Connection error:', error);
+                updateStatus(`Connection error: ${error}`);
+            });
+        }
+
+        // Clean up object URLs when the window closes
+        window.addEventListener('beforeunload', () => {
+            if (currentObjectUrl) {
+                URL.revokeObjectURL(currentObjectUrl);
+            }
+        });
+    </script>
+</body>
+</html>

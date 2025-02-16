@@ -6,7 +6,8 @@
     "start": "npx http-server -o index.html"
   },
   "dependencies": {
-    "html2canvas": "^1.4.1"
+    "html2canvas": "^1.4.1",
+    "peerjs": "^1.5.1"
   },
   "devDependencies": {
     "http-server": "^14.1.1"

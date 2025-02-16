@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Screen Capture Test Page</title>
+    <script src="html2canvas.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .box {
+            padding: 20px;
+            border-radius: 8px;
+            background: #f0f0f0;
+        }
+
+        .animated-box {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            animation: rotate 4s infinite linear;
+            margin: 20px auto;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .bounce {
+            width: 50px;
+            height: 50px;
+            background: #ff6b6b;
+            border-radius: 50%;
+            animation: bounce 1s infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .fade {
+            animation: fade 2s infinite;
+        }
+
+        @keyframes fade {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        iframe {
+            border: none;
+            width: 100%;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+
+        .video-container {
+            margin: 20px 0;
+        }
+
+        video {
+            width: 100%;
+            max-width: 400px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Screen Capture Test Page</h1>
+    
+    <div class="container">
+        <div class="box">
+            <h2>CSS Animations</h2>
+            <div class="animated-box"></div>
+            <div class="bounce"></div>
+        </div>
+        
+        <div class="box">
+            <h2>Sample Images</h2>
+            <img src="https://placehold.co/200x200.png" alt="Placeholder 1" class="fade" crossorigin="anonymous">
+            <img src="https://placehold.co/300x200.png" alt="Placeholder 2" crossorigin="anonymous">
+        </div>
+        
+        <div class="box">
+            <h2>Autoplay Videos</h2>
+            <div class="video-container">
+                <video autoplay loop muted playsinline crossorigin="anonymous">
+                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+                </video>
+                <video autoplay loop muted playsinline crossorigin="anonymous">
+                    <source src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" type="video/mp4">
+                </video>
+            </div>
+        </div>
+    </div>
+
+    <div class="box">
+        <h2>Nested Page</h2>
+        <iframe src="basictestpage-nested.html" id="nested-frame" sandbox="allow-same-origin allow-scripts allow-downloads allow-presentation allow-modals allow-forms"></iframe>
+    </div>
+</body>
+</html>
